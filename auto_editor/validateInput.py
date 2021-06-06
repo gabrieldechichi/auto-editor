@@ -5,18 +5,22 @@ import re
 import sys
 
 invalidExtensions = ['.txt', '.md', '.rtf', '.csv', '.cvs', '.html', '.htm',
-      '.xml', '.yaml', '.png', '.jpeg', '.jpg', '.gif', '.exe', '.doc',
-      '.docx', '.odt', '.pptx', '.xlsx', '.xls', 'ods', '.pdf', '.bat', '.dll',
-      '.prproj', '.psd', '.aep', '.zip', '.rar', '.7z', '.java', '.class', '.js',
-      '.c', '.cpp', '.csharp', '.py', '.app', '.git', '.github', '.gitignore',
-      '.db', '.ini', '.BIN', '.svg', '.in', '.pyc', '.log', '.xsd', '.ffpreset',
-      '.kys', '.essentialsound']
+                     '.xml', '.yaml', '.png', '.jpeg', '.jpg', '.gif', '.exe', '.doc',
+                     '.docx', '.odt', '.pptx', '.xlsx', '.xls', 'ods', '.pdf', '.bat', '.dll',
+                     '.prproj', '.psd', '.aep', '.zip', '.rar', '.7z', '.java', '.class', '.js',
+                     '.c', '.cpp', '.csharp', '.py', '.app', '.git', '.github', '.gitignore',
+                     '.db', '.ini', '.BIN', '.svg', '.in', '.pyc', '.log', '.xsd', '.ffpreset',
+                     '.kys', '.essentialsound']
+
 
 def validFiles(path: str, badExts: list):
     for f in os.listdir(path):
-        if(f[f.rfind('.'):] not in badExts and not os.path.isdir(f)
-            and not f.startswith('.')):
-            yield os.path.join(path, f)
+        f_path = os.path.join(path, f)
+        if (os.path.isdir(f_path)):
+            yield from validFiles(f_path, badExts)
+        elif(f[f.rfind('.'):] not in badExts and not os.path.isdir(f_path)
+                and not f.startswith('.') and f.rsplit('.')[1] == 'mp4'):
+            yield f_path
 
 
 class MyLogger(object):
@@ -58,7 +62,8 @@ def validInput(inputs: list, ffmpeg, args, log) -> list:
                 log.error('File must have extension.')
 
             if(fileFormat in invalidExtensions):
-                log.error(f'Invalid file extension "{fileFormat}" for {myInput}')
+                log.error(
+                    f'Invalid file extension "{fileFormat}" for {myInput}')
             inputList.append(myInput)
 
         elif(myInput.startswith('http://') or myInput.startswith('https://')):
@@ -72,19 +77,20 @@ def validInput(inputs: list, ffmpeg, args, log) -> list:
             try:
                 import youtube_dl
             except ImportError:
-                log.error('Download the youtube-dl python library to download URLs.\n' \
-                    '   pip3 install youtube-dl')
+                log.error('Download the youtube-dl python library to download URLs.\n'
+                          '   pip3 install youtube-dl')
 
             from usefulFunctions import ProgressBar
 
             if(not os.path.isfile(outtmpl + '.mp4')):
 
                 ytbar = ProgressBar(100, 'Downloading')
+
                 def my_hook(d):
                     nonlocal ytbar
                     if(d['status'] == 'downloading'):
                         p = d['_percent_str']
-                        p = p.replace('%','')
+                        p = p.replace('%', '')
                         ytbar.tick(float(p))
 
                 ydl_opts = {
