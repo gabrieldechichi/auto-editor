@@ -2,8 +2,9 @@
 
 import numpy as np
 
+
 def combineArrs(audioList: np.ndarray, motionList: np.ndarray, based: str,
-    log) -> np.ndarray:
+                log) -> np.ndarray:
 
     if(based == 'audio' or based == 'not_audio'):
         if(max(audioList) == 0):
@@ -53,11 +54,26 @@ def combineArrs(audioList: np.ndarray, motionList: np.ndarray, based: str,
     return hasLoud
 
 
+def findMistakeCues(audioData: np.ndarray, sampleRate: int, silentT: float,
+                    fps: float, log) -> np.ndarray:
+    import math
+
+    cueThreshold = 15000
+    aboveCueSamples = np.where(audioData > cueThreshold)[0]
+    cueSampleAmount = 3*sampleRate
+
+    # TODO: construir ranges de cues
+    # Zerar os range de cues
+    # Achar o valor maximo fora do range de cues
+    # Setar as cues para esse valor maximo
+
+
 def audioToHasLoud(audioData: np.ndarray, sampleRate: int, silentT: float,
-    fps: float, log) -> np.ndarray:
+                   fps: float, log) -> np.ndarray:
 
     import math
 
+    findMistakeCues(audioData, sampleRate, silentT, fps, log)
     audioSampleCount = audioData.shape[0]
 
     def getMaxVolume(s: np.ndarray) -> float:
@@ -70,6 +86,7 @@ def audioToHasLoud(audioData: np.ndarray, sampleRate: int, silentT: float,
     samplesPerFrame = sampleRate / fps
     audioFrameCount = int(math.ceil(audioSampleCount / samplesPerFrame))
     hasLoudAudio = np.zeros((audioFrameCount), dtype=np.bool_)
+    otherLoud = np.zeros((audioFrameCount))
 
     if(maxAudioVolume == 0):
         log.error('The entire audio is completely silent.')
@@ -79,8 +96,10 @@ def audioToHasLoud(audioData: np.ndarray, sampleRate: int, silentT: float,
         start = int(i * samplesPerFrame)
         end = min(int((i+1) * samplesPerFrame), audioSampleCount)
         audiochunks = audioData[start:end]
-        if(getMaxVolume(audiochunks) / maxAudioVolume >= silentT):
+        maxChunkVolume = getMaxVolume(audiochunks)
+        if(maxChunkVolume / maxAudioVolume >= silentT):
             hasLoudAudio[i] = True
+            otherLoud[i] = maxChunkVolume
 
     return hasLoudAudio
 
@@ -88,7 +107,7 @@ def audioToHasLoud(audioData: np.ndarray, sampleRate: int, silentT: float,
 # Motion detection algorithm based on this blog post:
 # https://pyimagesearch.com/2015/05/25/basic-motion-detection-and-tracking-with-python-and-opencv/
 def motionDetection(path: str, ffprobe, motionThreshold: float, log,
-    width: int, dilates: int, blur: int) -> np.ndarray:
+                    width: int, dilates: int, blur: int) -> np.ndarray:
 
     import cv2
     import subprocess
@@ -100,15 +119,16 @@ def motionDetection(path: str, ffprobe, motionThreshold: float, log,
     if(path.endswith('.mp4') or path.endswith('.mov')):
         # Query Container
         cmd = [ffprobe.getPath(), '-v', 'error', '-select_streams', 'v:0', '-show_entries',
-            'stream=nb_frames', '-of', 'default=nokey=1:noprint_wrappers=1', path]
+               'stream=nb_frames', '-of', 'default=nokey=1:noprint_wrappers=1', path]
     else:
         # Count the number of frames (slow)
         cmd = [ffprobe.getPath(), '-v', 'error', '-count_frames', '-select_streams', 'v:0',
-            '-show_entries', 'stream=nb_read_frames', '-of',
-            'default=nokey=1:noprint_wrappers=1', path]
+               '-show_entries', 'stream=nb_read_frames', '-of',
+               'default=nokey=1:noprint_wrappers=1', path]
 
     # Read what ffprobe piped in.
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    process = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     stdout, __ = process.communicate()
     output = stdout.decode()
 
@@ -146,10 +166,11 @@ def motionDetection(path: str, ffprobe, motionThreshold: float, log,
         if(not ret):
             break
 
-        cframe = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) # current frame
+        cframe = int(cap.get(cv2.CAP_PROP_POS_FRAMES))  # current frame
 
         frame = resize(frame, width=width)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) # Convert frame to grayscale.
+        # Convert frame to grayscale.
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if(blur > 0):
             gray = cv2.GaussianBlur(gray, (blur, blur), 0)
 
@@ -193,12 +214,15 @@ def removeSmall(hasLoud: np.ndarray, lim: int, replace: bool, with_: bool) -> np
             if(active):
                 if(j - startP < lim):
                     hasLoud[startP:j] = with_
+                    if (replace == 1):
+                        print(j)
                 active = False
     return hasLoud
 
 
 def isNumber(val):
-    return val.replace('.','',1).isdigit()
+    return val.replace('.', '', 1).isdigit()
+
 
 def setRange(hasLoud: np.ndarray, syntaxRange, fps: float, with_, log) -> np.ndarray:
 
@@ -233,9 +257,12 @@ def secToFrames(value, fps):
         return int(float(value) * fps)
     return value
 
+
 def cook(hasLoud: np.ndarray, minClip: int, minCut: int) -> np.ndarray:
     # Remove small loudness spikes
+    print("pre remove loud")
     hasLoud = removeSmall(hasLoud, minClip, replace=1, with_=0)
+    print("post remove loud")
     # Remove small silences
     hasLoud = removeSmall(hasLoud, minCut, replace=0, with_=1)
     return hasLoud
@@ -372,24 +399,27 @@ def applyRects(cmdRects, audioData, sampleRate, fps, log):
 
         if(end.startswith('audio')):
             if(start_list is None):
-                log.error('The start parameter must also have a boolean expression.')
+                log.error(
+                    'The start parameter must also have a boolean expression.')
             end_list = handleBoolExp(end, audioData, sampleRate, fps, log)
 
         if(start_list is None):
-            rects.append(['rectangle', start, end, x1, y1, x2, y2, color, thickness])
+            rects.append(['rectangle', start, end, x1,
+                          y1, x2, y2, color, thickness])
 
         elif(end_list is None):
             # Handle if end is not a boolean expression.
             indexs = np.where(start_list)[0]
             if(indexs != []):
                 rects.append(['rectangle', str(indexs[0]), end, x1, y1, x2, y2, color,
-                    thickness])
+                              thickness])
         else:
-            chunks = applyBasicSpacing(merge(start_list, end_list), fps, 0, 0, log)
+            chunks = applyBasicSpacing(
+                merge(start_list, end_list), fps, 0, 0, log)
             for item in chunks:
                 if(item[2] == 1):
                     rects.append(['rectangle', str(item[0]), str(item[1]), x1, y1, x2, y2,
-                        color, thickness])
+                                  color, thickness])
 
             if(rects == []):
                 log.warning('No rectangles applied.')
@@ -432,24 +462,27 @@ def applyZooms(cmdZooms, audioData, sampleRate, fps, log):
 
         if(end.startswith('audio')):
             if(start_list is None):
-                log.error('The start parameter must also have a boolean expression.')
+                log.error(
+                    'The start parameter must also have a boolean expression.')
             end_list = handleBoolExp(end, audioData, sampleRate, fps, log)
 
         if(start_list is None):
-            zooms.append(['zoom', start, end, start_zoom, end_zoom, x, y, inter, hold])
+            zooms.append(['zoom', start, end, start_zoom,
+                          end_zoom, x, y, inter, hold])
 
         elif(end_list is None):
             # Handle if end is not a boolean expression.
             indexs = np.where(start_list)[0]
             if(indexs != []):
                 zooms.append(['zoom', str(indexs[0]), end, start_zoom, end_zoom, x, y,
-                    inter, hold])
+                              inter, hold])
         else:
-            chunks = applyBasicSpacing(merge(start_list, end_list), fps, 0, 0, log)
+            chunks = applyBasicSpacing(
+                merge(start_list, end_list), fps, 0, 0, log)
             for item in chunks:
                 if(item[2] == 1):
                     zooms.append(['zoom', str(item[0]), str(item[1]), start_zoom, end_zoom,
-                        x, y, inter, hold])
+                                  x, y, inter, hold])
 
             if(zooms == []):
                 log.warning('No zooms applied.')
