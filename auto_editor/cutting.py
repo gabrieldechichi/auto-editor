@@ -214,8 +214,8 @@ def removeSmall(hasLoud: np.ndarray, lim: int, replace: bool, with_: bool) -> np
             if(active):
                 if(j - startP < lim):
                     hasLoud[startP:j] = with_
-                    if (replace == 1):
-                        print(j)
+                    # if (replace == 1):
+                    #     print(j)
                 active = False
     return hasLoud
 
